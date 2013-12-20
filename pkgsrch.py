@@ -1,187 +1,51 @@
 import psycopg2, argparse, apt, sys
 from subprocess import call
+from init import initializeDB
+from proc import processQuery
 
 def main(**args):
-
+    """Main function."""
     conn = psycopg2.connect("dbname=pkgdb")
 
     cur = conn.cursor()
-
+    print str(args)
     if args['init']:
         initializeDB(cur)
+    else:
+        processQuery(args, cur)
 
     conn.commit()
     cur.close()
     conn.close()
-
-def initializeDB(cur):
-    """Drop tables if they already exist. Create them. Populate them."""
-    dropTables(cur)
-    createTables(cur)
-    populateFromApt(cur)
-
-def dropTables(cur):
-    """Drop old tables in database."""
-    [dropTableIfExists(tn, cur) for tn in ['package', 'fileinfo',
-        'descriptor', 'compatibility',
-        'maintains', 'maintainer']]
-    [dropSequenceIfExists(sn, cur) for sn in ['pack_id_seq',
-        'maint_id_seq']]
-
-def createTables(cur):
-    """Create tables for the database."""
-    cur.execute(
-            """CREATE SEQUENCE pack_id_seq;
-        CREATE TABLE package (
-                id integer NOT NULL DEFAULT nextval('pack_id_seq')
-                    PRIMARY KEY,
-                name text,
-                installed boolean
-        );""")
-
-    cur.execute(
-            """CREATE TABLE fileinfo (
-                path text,
-                sizeDownload integer,
-                sizeInstalled integer,
-                pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
-        );""")
-
-    cur.execute("""CREATE TABLE descriptor (
-                description text,
-                tag text[],
-                section text,
-                manpage text,
-                relevancy integer,
-                pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
-        );""")
-
-    cur.execute("""CREATE TABLE compatibility (
-                architecture text,
-                version text,
-                dependencies text[],
-                priority text,
-                branch text,
-                packageSite text,
-                pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
-        );""")
-
-    cur.execute("""CREATE SEQUENCE maint_id_seq;
-        CREATE TABLE maintainer (
-                mid integer NOT NULL DEFAULT
-                    nextval('maint_id_seq') PRIMARY KEY,
-                name text,
-                email text,
-                homepage text
-        );""")
-
-    cur.execute("""CREATE TABLE maintains (
-            maint integer,
-            FOREIGN KEY(maint) REFERENCES maintainer(mid),
-            pack integer,
-            FOREIGN KEY(pack) REFERENCES package(id)
-        );""")
-
-def tableExists(tableName, cur):
-    """Return true if the table exists, false otherwise."""
-    cur.execute("""SELECT EXISTS(SELECT 1 
-                          FROM information_schema.tables
-                          WHERE table_catalog='pkgdb' AND 
-                          table_schema='public' AND
-                          table_name=%s);""", (tableName,))
-    return cur.fetchone()[0]
-
-def sequenceExists(sequenceName, cur):
-    """Return true if the sequence exists, false otherwise."""
-    cur.execute("""SELECT EXISTS(SELECT 1 
-                          FROM information_schema.sequences
-                          WHERE sequence_catalog='pkgdb' AND 
-                          sequence_schema='public' AND
-                          sequence_name=%s);""", (sequenceName,))
-    return cur.fetchone()[0]
-
-def dropTableIfExists(tableName, cur):
-    """Drop a table if it exists."""
-    if tableExists(tableName, cur):
-        cur.execute('DROP TABLE ' + tableName + ' CASCADE;')
-        return True
-    return False
-
-def dropSequenceIfExists(seqName, cur):
-    """Drop a sequence if it exists."""
-    if sequenceExists(seqName, cur):
-        cur.execute('DROP SEQUENCE ' + seqName + ' CASCADE;')
-        return True
-    return False
-
-def populateFromApt(cur):
-    """Populates the database from the apt cache."""
-    cache = apt.cache.Cache()
-    for i, pkg in enumerate(cache):
-        if i % 20 == 0:
-            writeProgress(i, len(cache), 'Populating from cache')
-        insertRows(pkg, cur)
-
-def insertRows(pkg, cur):
-    cur.execute('INSERT INTO package (name) VALUES (%s)', 
-            (pkg.name,))
-    packId = getMax('id', 'package', cur)
-    #for v in pkg.versions:
-    #    print v.raw_description
-    if len(pkg.versions) == 0:
-        return
-    v = pkg.versions[0]
-    cur.execute("""INSERT INTO fileinfo (path, sizeDownload,
-                                         sizeInstalled, pack)
-                                         VALUES (%s, %s, %s, %s)""",
-                                         (v.filename, 0, 
-                                          v.installed_size, packId))
-
-    cur.execute("""INSERT INTO descriptor (
-                description,
-                tag,
-                section,
-                manpage,
-                relevancy,
-                pack) VALUES (%s, %s, %s, %s, %s, %s)""", 
-                (v.raw_description, ['k', '...'], 0, 0, 0, packId))
-
-    cur.execute("""INSERT INTO compatibility (
-                architecture,
-                version,
-                dependencies,
-                priority,
-                branch,
-                packageSite,
-                pack) VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (0, 0, [0, 0], 0, 0, 0, packId))
-
-    cur.execute("""INSERT INTO maintainer (name, email, homepage)
-                   VALUES (%s, %s, %s)""", (0, 0, 0))
-    maintId = getMax('mid', 'maintainer', cur)
-    cur.execute("""INSERT INTO maintains (maint, pack)
-                   VALUES (%s, %s)""", (maintId, packId))
-    
-
-def getMax(col, rel, cur):
-    """Returns the max of the given column from the relation."""
-    cur.execute('SELECT MAX(' + col + ') FROM ' + rel)
-    return cur.fetchone()[0]
-
-def writeProgress(current, total, message):
-    """Writes a progress percentage to stdout."""
-    sys.stdout.write(message + ": %3.2f%%   \r" \
-            % (float(current) / total * 100))
-    sys.stdout.flush()
 
 if __name__ == '__main__':
     # Command line argument handling.
     parser = argparse.ArgumentParser(
             description='Search the package cache', version='0.1')
     parser.add_argument('-i', '--init',
-            help='Initialize database', action="store_true")
+            help='Initialize database. Overrides any other arguments.',
+            action="store_true")
+    parser.add_argument('-l', '--limit',
+            help='Limit number of results', action="store_true")
+    parser.add_argument('--sort=alpha',
+            help='Sort alphabetically instead of by relevance',
+            action="store_true")
+
+    parser.add_argument('--depend',
+            help='List packages with this dependency',
+            action="store_true")
+    parser.add_argument('--priority',
+            help='List packages with this priority',
+            action="store_true")
+    parser.add_argument('--exact',
+            help='List packages with this exact name',
+            action="store_true")
+    parser.add_argument('--hide-description',
+            help="Don't print the description of packages",
+            action="store_true")
+    parser.add_argument('--show-man',
+            help="Print the man page of packages",
+            action="store_true")
+    
     args = parser.parse_args()
     main(**vars(args))
