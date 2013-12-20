@@ -1,4 +1,4 @@
-import psycopg2, argparse, apt
+import psycopg2, argparse, apt, sys
 from subprocess import call
 
 def main(**args):
@@ -118,12 +118,64 @@ def dropSequenceIfExists(seqName, cur):
     return False
 
 def populateFromApt(cur):
+    """Populates the database from the apt cache."""
     cache = apt.cache.Cache()
-    for pkg in cache:
-        print 'pkg: ', pkg
-        for v in pkg.versions:
-            print v.raw_description
+    for i, pkg in enumerate(cache):
+        if i % 20 == 0:
+            writeProgress(i, len(cache), 'Populating from cache')
+        insertRows(pkg, cur)
 
+def insertRows(pkg, cur):
+    cur.execute('INSERT INTO package (name) VALUES (%s)', 
+            (pkg.name,))
+    packId = getMax('id', 'package', cur)
+    #for v in pkg.versions:
+    #    print v.raw_description
+    if len(pkg.versions) == 0:
+        return
+    v = pkg.versions[0]
+    cur.execute("""INSERT INTO fileinfo (path, sizeDownload,
+                                         sizeInstalled, pack)
+                                         VALUES (%s, %s, %s, %s)""",
+                                         (v.filename, 0, 
+                                          v.installed_size, packId))
+
+    cur.execute("""INSERT INTO descriptor (
+                description,
+                tag,
+                section,
+                manpage,
+                relevancy,
+                pack) VALUES (%s, %s, %s, %s, %s, %s)""", 
+                (v.raw_description, ['k', '...'], 0, 0, 0, packId))
+
+    cur.execute("""INSERT INTO compatibility (
+                architecture,
+                version,
+                dependencies,
+                priority,
+                branch,
+                packageSite,
+                pack) VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (0, 0, [0, 0], 0, 0, 0, packId))
+
+    cur.execute("""INSERT INTO maintainer (name, email, homepage)
+                   VALUES (%s, %s, %s)""", (0, 0, 0))
+    maintId = getMax('mid', 'maintainer', cur)
+    cur.execute("""INSERT INTO maintains (maint, pack)
+                   VALUES (%s, %s)""", (maintId, packId))
+    
+
+def getMax(col, rel, cur):
+    """Returns the max of the given column from the relation."""
+    cur.execute('SELECT MAX(' + col + ') FROM ' + rel)
+    return cur.fetchone()[0]
+
+def writeProgress(current, total, message):
+    """Writes a progress percentage to stdout."""
+    sys.stdout.write(message + ": %3.2f%%   \r" \
+            % (float(current) / total * 100))
+    sys.stdout.flush()
 
 if __name__ == '__main__':
     # Command line argument handling.
