@@ -1,4 +1,4 @@
-import psycopg2, argparse
+import psycopg2, argparse, apt
 from subprocess import call
 
 def main(**args):
@@ -16,12 +16,20 @@ def main(**args):
 
 def initializeDB(cur):
     """Drop tables if they already exist. Create them. Populate them."""
+    dropTables(cur)
+    createTables(cur)
+    populateFromApt(cur)
+
+def dropTables(cur):
+    """Drop old tables in database."""
     [dropTableIfExists(tn, cur) for tn in ['package', 'fileinfo',
         'descriptor', 'compatibility',
         'maintains', 'maintainer']]
     [dropSequenceIfExists(sn, cur) for sn in ['pack_id_seq',
         'maint_id_seq']]
-    
+
+def createTables(cur):
+    """Create tables for the database."""
     cur.execute(
             """CREATE SEQUENCE pack_id_seq;
         CREATE TABLE package (
@@ -77,7 +85,6 @@ def initializeDB(cur):
             FOREIGN KEY(pack) REFERENCES package(id)
         );""")
 
-
 def tableExists(tableName, cur):
     """Return true if the table exists, false otherwise."""
     cur.execute("""SELECT EXISTS(SELECT 1 
@@ -87,13 +94,13 @@ def tableExists(tableName, cur):
                           table_name=%s);""", (tableName,))
     return cur.fetchone()[0]
 
-def sequenceExists(tableName, cur):
-    """Return true if the table exists, false otherwise."""
+def sequenceExists(sequenceName, cur):
+    """Return true if the sequence exists, false otherwise."""
     cur.execute("""SELECT EXISTS(SELECT 1 
                           FROM information_schema.sequences
                           WHERE sequence_catalog='pkgdb' AND 
                           sequence_schema='public' AND
-                          sequence_name=%s);""", (tableName,))
+                          sequence_name=%s);""", (sequenceName,))
     return cur.fetchone()[0]
 
 def dropTableIfExists(tableName, cur):
@@ -109,6 +116,14 @@ def dropSequenceIfExists(seqName, cur):
         cur.execute('DROP SEQUENCE ' + seqName + ' CASCADE;')
         return True
     return False
+
+def populateFromApt(cur):
+    cache = apt.cache.Cache()
+    for pkg in cache:
+        print 'pkg: ', pkg
+        for v in pkg.versions:
+            print v.raw_description
+
 
 if __name__ == '__main__':
     # Command line argument handling.
