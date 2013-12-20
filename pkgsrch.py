@@ -10,31 +10,20 @@ def main(**args):
     if args['init']:
         initializeDB(cur)
 
-    # Pass data to fill a query placeholders and let Psycopg perform
-    # the correct conversion (no more SQL injections!)
-    cur.execute("INSERT INTO test (num, data) VALUES (%s, %s)",
-               (100, "abc'def"))
-
-    # Query the database and obtain data as Python objects
-    cur.execute("SELECT * FROM test;")
-    cur.fetchone()
-
-    # Make the changes to the database persistent
     conn.commit()
-
-    # Close communication with the database
     cur.close()
     conn.close()
 
 def initializeDB(cur):
     """Drop tables if they already exist. Create them. Populate them."""
     [dropTableIfExists(tn, cur) for tn in ['package', 'fileinfo',
-                                      'descriptor', 'compatibility',
-                                      'maintains', 'maintainer']]
+        'descriptor', 'compatibility',
+        'maintains', 'maintainer']]
     [dropSequenceIfExists(sn, cur) for sn in ['pack_id_seq',
-                                              'maint_id_seq']]
+        'maint_id_seq']]
+    
     cur.execute(
-        """CREATE SEQUENCE pack_id_seq;
+            """CREATE SEQUENCE pack_id_seq;
         CREATE TABLE package (
                 id integer NOT NULL DEFAULT nextval('pack_id_seq')
                     PRIMARY KEY,
@@ -43,7 +32,7 @@ def initializeDB(cur):
         );""")
 
     cur.execute(
-        """CREATE TABLE fileinfo (
+            """CREATE TABLE fileinfo (
                 path text,
                 sizeDownload integer,
                 sizeInstalled integer,
@@ -51,7 +40,7 @@ def initializeDB(cur):
                 FOREIGN KEY(pack) REFERENCES package(id)
         );""")
 
-    """CREATE TABLE descriptor (
+    cur.execute("""CREATE TABLE descriptor (
                 description text,
                 tag text[],
                 section text,
@@ -59,9 +48,9 @@ def initializeDB(cur):
                 relevancy integer,
                 pack integer,
                 FOREIGN KEY(pack) REFERENCES package(id)
-        );
+        );""")
 
-        CREATE TABLE compatibility (
+    cur.execute("""CREATE TABLE compatibility (
                 architecture text,
                 version text,
                 dependencies text[],
@@ -70,23 +59,24 @@ def initializeDB(cur):
                 packageSite text,
                 pack integer,
                 FOREIGN KEY(pack) REFERENCES package(id)
-        );
+        );""")
 
-        CREATE TABLE maintains (
-            maint integer,
-            FOREIGN KEY(maint) REFERENCES maintainer(mid),
-            pack integer,
-            FOREIGN KEY(pack) REFERENCES package(id)
-        );
-
-        CREATE SEQUENCE maint_id_seq;
+    cur.execute("""CREATE SEQUENCE maint_id_seq;
         CREATE TABLE maintainer (
                 mid integer NOT NULL DEFAULT
                     nextval('maint_id_seq') PRIMARY KEY,
                 name text,
                 email text,
-                homepage text,
-        );"""  #)
+                homepage text
+        );""")
+
+    cur.execute("""CREATE TABLE maintains (
+            maint integer,
+            FOREIGN KEY(maint) REFERENCES maintainer(mid),
+            pack integer,
+            FOREIGN KEY(pack) REFERENCES package(id)
+        );""")
+
 
 def tableExists(tableName, cur):
     """Return true if the table exists, false otherwise."""
@@ -125,6 +115,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
             description='Search the package cache', version='0.1')
     parser.add_argument('-i', '--init',
-                        help='Initialize database', action="store_true")
+            help='Initialize database', action="store_true")
     args = parser.parse_args()
     main(**vars(args))
