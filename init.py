@@ -20,7 +20,7 @@ def createTables(cur):
     cur.execute(
             """CREATE SEQUENCE pack_id_seq;
         CREATE TABLE package (
-                id integer NOT NULL DEFAULT nextval('pack_id_seq')
+                pack integer NOT NULL DEFAULT nextval('pack_id_seq')
                     PRIMARY KEY,
                 name text,
                 installed boolean
@@ -31,7 +31,7 @@ def createTables(cur):
                 path text,
                 sizeInstalled bigint,
                 pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
+                FOREIGN KEY(pack) REFERENCES package(pack)
         );""")
 
     cur.execute("""CREATE TABLE descriptor (
@@ -41,7 +41,7 @@ def createTables(cur):
                 manpage text,
                 relevancy integer,
                 pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
+                FOREIGN KEY(pack) REFERENCES package(pack)
         );""")
 
     cur.execute("""CREATE TABLE compatibility (
@@ -52,7 +52,7 @@ def createTables(cur):
                 branch text,
                 packageSite text,
                 pack integer,
-                FOREIGN KEY(pack) REFERENCES package(id)
+                FOREIGN KEY(pack) REFERENCES package(pack)
         );""")
 
     cur.execute("""CREATE SEQUENCE maint_id_seq;
@@ -68,7 +68,7 @@ def createTables(cur):
             maint integer,
             FOREIGN KEY(maint) REFERENCES maintainer(mid),
             pack integer,
-            FOREIGN KEY(pack) REFERENCES package(id)
+            FOREIGN KEY(pack) REFERENCES package(pack)
         );""")
 
 def tableExists(tableName, cur):
@@ -114,7 +114,7 @@ def populateFromApt(cur):
 def insertRows(pkg, cur):
     cur.execute('INSERT INTO package (name) VALUES (%s)', 
             (pkg.name,))
-    packId = getMax('id', 'package', cur)
+    packId = getMax('pack', 'package', cur)
     if len(pkg.versions) == 0:
         return
     v = pkg.versions[0]
